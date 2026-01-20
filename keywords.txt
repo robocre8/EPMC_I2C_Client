@@ -1,0 +1,20 @@
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+EPMC_I2C_Client KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+writeSpeed KEYWORD2
+writePWM KEYWORD2
+readPos  KEYWORD2
+readVel  KEYWORD2
+setCmdTimeout KEYWORD2
+getCmdTimeout KEYWORD2
+setPidMode KEYWORD2
+getPidMode KEYWORD2
+clearDataBuffer KEYWORD2
+readMotorData KEYWORD2
