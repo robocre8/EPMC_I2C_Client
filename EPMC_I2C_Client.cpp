@@ -1,14 +1,47 @@
 #include "EPMC_I2C_Client.h"
 
-EPMC_I2C_Client::EPMC_I2C_Client(uint8_t slave_addr)
+inline void delayMs(int ms)
+{
+  for (int i = 0; i < ms; i += 1)
+  {
+    delayMicroseconds(1000);
+  }
+}
+
+EPMC_I2C_Client::EPMC_I2C_Client(uint8_t slave_addr, SupportedNumOfMotors supported_num_of_motors)
 {
   slaveAddr = slave_addr;
+
+  switch (supported_num_of_motors)
+  {
+  case SupportedNumOfMotors::TWO :
+    num_of_motors = 2;
+    break;
+  
+  case SupportedNumOfMotors::FOUR :
+    num_of_motors = 4;
+    break;
+  }
 }
 
 bool EPMC_I2C_Client::begin(TwoWire &wire)
 {
   _wire = &wire;
-  return true;
+
+  delayMs(3000);
+
+  constexpr int max_attempts = 10;
+
+  for (int i = 0; i < max_attempts; ++i)
+  {
+      if (confirmNumOfMotors()){
+        return true;
+      }
+      delayMs(100);
+  }
+
+  _wire = nullptr;
+  return false;
 }
 
 bool EPMC_I2C_Client::wireReady() const {
@@ -81,6 +114,28 @@ void EPMC_I2C_Client::write_data2(uint8_t cmd, float val0, float val1)
   _wire->endTransmission(true);
 }
 
+void EPMC_I2C_Client::write_data4(uint8_t cmd, float val0, float val1, float val2, float val3)
+{
+  if (!wireReady()) return;
+  // Build packet: start_byte + cmd + length + float*4 + checksum
+  uint8_t packet[1 + 1 + 1 + 16 + 1];
+  packet[0] = START_BYTE;
+  packet[1] = cmd;
+  packet[2] = 16; // msg is 4 float = 16byte length
+  memcpy(&packet[3], &val0, sizeof(float));
+  memcpy(&packet[7], &val1, sizeof(float));
+  memcpy(&packet[11], &val2, sizeof(float));
+  memcpy(&packet[15], &val3, sizeof(float));
+
+  // Compute checksum
+  uint8_t checksum = computeChecksum(packet, 19);
+  packet[19] = checksum;
+
+  _wire->beginTransmission(slaveAddr);
+  _wire->write(packet, sizeof(packet));
+  _wire->endTransmission(true);
+}
+
 void EPMC_I2C_Client::read_data1(float& val0)
 {
   if (!wireReady()) return;
@@ -130,33 +185,50 @@ void EPMC_I2C_Client::read_data4(float &val0, float &val1, float &val2, float &v
   memcpy(&val3, &buffer[12], sizeof(float));
 }
 
-void EPMC_I2C_Client::readMotorData(float &pos0, float &pos1, float &v0, float &v1){
-  send_packet_without_payload(READ_MOTOR_DATA);
-  read_data4(pos0, pos1, v0, v1);
+void EPMC_I2C_Client::writeSpeed(float v0, float v1, float v2, float v3){
+  if (num_of_motors == 2) write_data2(WRITE_VEL, v0, v1);
+  else if (num_of_motors == 4) write_data4(WRITE_VEL, v0, v1, v2, v3);
 }
 
-void EPMC_I2C_Client::writeSpeed(float v0, float v1){
-  write_data2(WRITE_VEL, v0, v1);
+void EPMC_I2C_Client::writePWM(int pwm0, int pwm1, int pwm2, int pwm3){
+  if (num_of_motors == 2) write_data2(WRITE_PWM, (float)pwm0, (float)pwm1);
+  else if (num_of_motors == 4) write_data4(WRITE_PWM, (float)pwm0, (float)pwm1, (float)pwm2, (float)pwm3);
 }
 
-void EPMC_I2C_Client::writePWM(int pwm0, int pwm1){
-  write_data2(WRITE_PWM, (float)pwm0, (float)pwm1);
-}
-
-void EPMC_I2C_Client::readPos(float &pos0, float &pos1){
+void EPMC_I2C_Client::readPos(){
+  clearBuffer();
   send_packet_without_payload(READ_POS);
-  read_data2(pos0, pos1);
+  if (num_of_motors == 2) {
+    read_data2(dataBuffer[0], dataBuffer[1]);
+  }
+  else if (num_of_motors == 4) {
+    read_data4(dataBuffer[0], dataBuffer[1], dataBuffer[2], dataBuffer[3]);
+    read_data4(dataBuffer[0], dataBuffer[1], dataBuffer[2], dataBuffer[3]);
+  }
 }
 
-void EPMC_I2C_Client::readVel(float &v0, float &v1){
+void EPMC_I2C_Client::readVel(){
+  clearBuffer();
   send_packet_without_payload(READ_VEL);
-  read_data2(v0, v1);
+  if (num_of_motors == 2) {
+    read_data2(dataBuffer[0], dataBuffer[1]);
+  }
+  else if (num_of_motors == 4) {
+    read_data4(dataBuffer[0], dataBuffer[1], dataBuffer[2], dataBuffer[3]);
+    read_data4(dataBuffer[0], dataBuffer[1], dataBuffer[2], dataBuffer[3]);
+  }
 }
 
 float EPMC_I2C_Client::getMaxVel(int motor_no){
-  float max_vel;
+  float max_vel=0.0;
   write_data1(GET_MAX_VEL, 0.0, motor_no);
-  read_data1(max_vel);
+  if (num_of_motors == 2) {
+    read_data1(max_vel);
+  }
+  else if (num_of_motors == 4) {
+    read_data1(max_vel);
+    read_data1(max_vel);
+  }
   return max_vel;
 }
 
@@ -165,9 +237,15 @@ void EPMC_I2C_Client::setCmdTimeout(int timeout_ms){
 }
 
 int EPMC_I2C_Client::getCmdTimeout(){
-  float timeout_ms;
+  float timeout_ms=0.0;
   write_data1(GET_CMD_TIMEOUT);
-  read_data1(timeout_ms);
+  if (num_of_motors == 2) {
+    read_data1(timeout_ms);
+  }
+  else if (num_of_motors == 4) {
+    read_data1(timeout_ms);
+    read_data1(timeout_ms);
+  }
   return (int)timeout_ms;
 }
 
@@ -176,15 +254,53 @@ void EPMC_I2C_Client::setPidMode(int mode){
 }
 
 int EPMC_I2C_Client::getPidMode(){
-  float mode;
+  float mode=0.0;
   write_data1(GET_PID_MODE);
-  read_data1(mode);
+  if (num_of_motors == 2) {
+    read_data1(mode);
+  }
+  else if (num_of_motors == 4) {
+    read_data1(mode);
+    read_data1(mode);
+  }
   return (int)mode;
 }
 
 bool EPMC_I2C_Client::clearDataBuffer(){
-  float res;
+  float res=0.0;
   write_data1(CLEAR_DATA_BUFFER);
-  read_data1(res);
+  if (num_of_motors == 2) {
+    read_data1(res);
+  }
+  else if (num_of_motors == 4) {
+    read_data1(res);
+    read_data1(res);
+  }
   return ((int)res == 1);
+}
+
+int EPMC_I2C_Client::getNumOfMotors(){
+  float num_of_mtr=0.0;
+  write_data1(GET_NUM_OF_MOTORS);
+  if (num_of_motors == 2) {
+    read_data1(num_of_mtr);
+  }
+  else if (num_of_motors == 4) {
+    read_data1(num_of_mtr);
+    read_data1(num_of_mtr);
+  }
+  return (int)num_of_mtr;
+}
+
+bool EPMC_I2C_Client::confirmNumOfMotors()
+{
+  int motor_num = getNumOfMotors();
+  return (motor_num == num_of_motors);
+}
+
+void EPMC_I2C_Client::clearBuffer()
+{
+  for (int i=0; i<4; i+=1){
+    dataBuffer[i] = 0.0;
+  }
 }
