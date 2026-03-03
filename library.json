@@ -1,6 +1,6 @@
 {
   "name": "EPMC_I2C_Client",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Arduino I2C client library for the Easy PID Motor Controller (EPMC).",
   "keywords": [
     "i2c",
@@ -22,6 +22,6 @@
     "url": "https://github.com/robocre8/EPMC_I2C_Client"
   },
   "frameworks": ["arduino"],
-  "platforms": "*",
+  "platforms": ["espressif8266","espressif32","atmegaavr"],
   "license": "MIT"
 }
