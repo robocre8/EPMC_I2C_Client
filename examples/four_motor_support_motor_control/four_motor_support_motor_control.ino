@@ -14,16 +14,14 @@
 #include <EPMC_I2C_Client.h>
 
 uint8_t i2c_address = 0x55; // set this address to the same address you have during setup via the GUI app
-EPMC_I2C_Client controller(i2c_address, SupportedNumOfMotors::TWO);
+EPMC_I2C_Client controller(i2c_address, SupportedNumOfMotors::FOUR);
 
-bool connect_success;
-// [4 rev/sec, 2 rev/sec, 1 rev/sec, 0.5 rev/sec]
-float targetVel[] = {1.571, 3.142, 6.284, 12.568}; // in rad/sec
+float targetVel[] = {1.571, 3.142, 6.284}; // [4 rev/sec, 2 rev/sec, 1 rev/sec]
 float vel = targetVel[1]; // in rad/sec
 float v = 0.0;
 
-float pos0, pos1;
-float vel0, vel1;
+float pos0, pos1, pos2, pos3;
+float vel0, vel1, vel2, vel3;
 
 bool sendHigh = true;
 
@@ -40,13 +38,14 @@ void setup()
 
   // start i2c communication
   Wire.begin();
-  connect_success = controller.begin();
+  bool connect_success = controller.begin(); // takes about 3 to 4 secs to connect
   if (!connect_success) {
     Serial.println("Error Connecting to EPMC. Probably due to Supported NumOfMotor Mismatch");
+    while(true);
   }
 
   controller.clearDataBuffer();
-  controller.writeSpeed(v, v);
+  controller.writeSpeed(v, v, v, v);
 
   int cmd_vel_timeout = 10000; // 0 to deactivate.
   controller.setCmdTimeout(cmd_vel_timeout); // set motor command velocity timeout
@@ -62,34 +61,29 @@ void setup()
 
 void loop()
 {
-  if (((millis() - cmdTime) >= cmdTimeInterval) && connect_success)
+  if ((millis() - cmdTime) >= cmdTimeInterval)
   {
     if (sendHigh)
     {
       v = vel;
-      controller.writeSpeed(v, v);
+      controller.writeSpeed(v, v, v, v);
       vel *= -1;
       sendHigh = false;
     }
     else
     {
       v = 0.0;
-      controller.writeSpeed(v, v);
+      controller.writeSpeed(v, v, v, v);
       sendHigh = true;
     }
     cmdTime = millis();
   }
 
-  if (((millis() - readTime) >= readTimeInterval) && connect_success)
+  if ((millis() - readTime) >= readTimeInterval)
   {
-    // controller.writeSpeed(v, v);
-    controller.readPos();
-    pos0 = controller.dataBuffer[0];
-    pos1 = controller.dataBuffer[1];
-
-    controller.readVel();
-    vel0 = controller.dataBuffer[0];
-    vel1 = controller.dataBuffer[1];
+    // controller.writeSpeed(v, v, v, v);
+    controller.readPos(pos0, pos1, pos2, pos3);
+    controller.readVel(vel0, vel1, vel2, vel3);
 
     // Print results
     Serial.println("-----------------------------------");
@@ -97,6 +91,10 @@ void loop()
     Serial.print(pos0, 2); Serial.print("\t"); Serial.println(vel0, 2);
     Serial.print("Motor 1: ");
     Serial.print(pos1, 2); Serial.print("\t"); Serial.println(vel1, 2);
+    Serial.print("Motor 2: ");
+    Serial.print(pos2, 2); Serial.print("\t"); Serial.println(vel2, 2);
+    Serial.print("Motor 3: ");
+    Serial.print(pos3, 2); Serial.print("\t"); Serial.println(vel3, 2);
     Serial.println("------------------------------------");
     
     // Serial.println();
